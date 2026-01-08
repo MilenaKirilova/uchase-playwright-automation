@@ -1,0 +1,86 @@
+name: Playwright Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+  # Optional: scheduled run (daily 06:00 UTC)
+  schedule:
+    - cron: "0 6 * * *"
+
+  # Manual run (Run workflow button)
+  workflow_dispatch:
+    inputs:
+      project:
+        description: "Playwright project (chromium/firefox/webkit)"
+        required: false
+        default: "chromium"
+      grep:
+        description: "Run only tests matching grep (optional)"
+        required: false
+        default: ""
+
+jobs:
+  test:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+
+    # Pipeline variables / secrets (available to steps)
+    env:
+      BASE_URL: ${{ vars.BASE_URL }}
+      E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+      E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+
+      # Defaults if not manually provided
+      PW_PROJECT: ${{ github.event.inputs.project || 'chromium' }}
+      PW_GREP: ${{ github.event.inputs.grep || '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
+
+      - name: Run Playwright tests
+        run: |
+          echo "Project: $PW_PROJECT"
+          echo "Grep: $PW_GREP"
+
+          CMD="npx playwright test --project=$PW_PROJECT"
+
+          if [ -n "$PW_GREP" ]; then
+            CMD="$CMD --grep \"$PW_GREP\""
+          fi
+
+          echo "Running: $CMD"
+          eval $CMD
+
+      # Upload HTML report
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 30
+
+      # Upload traces/screenshots/videos (usually stored in test-results/)
+      - name: Upload test results (traces)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results/
+          retention-days: 30
